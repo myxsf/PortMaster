@@ -3,11 +3,15 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import {
+  clearServiceLogs,
   launchLocalService,
+  listCustomServices,
   listServices,
+  removeCustomService,
   removeServiceRecord,
   refreshServices,
   restartService,
+  saveCustomService,
   saveServiceRecord,
   saveAlias,
   stopService,
@@ -79,3 +83,7 @@ ipcMain.handle('services:unrecord', (_event, input) => removeServiceRecord(input
 ipcMain.handle('services:stop', (_event, id: string) => stopService(id))
 ipcMain.handle('services:restart', (_event, id: string) => restartService(id))
 ipcMain.handle('services:launch-local', (_event, input) => launchLocalService(input))
+ipcMain.handle('services:logs:clear', (_event, ids: string[]) => clearServiceLogs(ids))
+ipcMain.handle('settings:custom-services:list', () => listCustomServices())
+ipcMain.handle('settings:custom-services:save', (_event, input) => saveCustomService(input))
+ipcMain.handle('settings:custom-services:remove', (_event, id: string) => removeCustomService(id))

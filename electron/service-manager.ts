@@ -5,6 +5,7 @@ import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 
 import type {
+  CustomServiceConfig,
   LocalLaunchInput,
   SavedServiceInput,
   ServiceItem,
@@ -19,8 +20,10 @@ let cachedDockerBinary: string | null | undefined
 interface PersistedRegistry {
   aliases: Record<string, string>
   actionLogs: Record<string, string[]>
+  mutedLogs: Record<string, string[]>
   localLaunches: Record<string, PersistedLaunch>
   savedServices: Record<string, SavedService>
+  customServices: Record<string, CustomServiceConfig>
 }
 
 interface PersistedLaunch {
@@ -43,6 +46,10 @@ interface SavedService {
   detectedName: string
   path: string
   source: ServiceSource
+  stackLabel?: string
+  projectId?: string
+  projectLabel?: string
+  projectPath?: string
 }
 
 interface LocalRuntime {
@@ -55,6 +62,7 @@ interface LocalRuntime {
   cwd?: string
   uptime: string
   path: string
+  stackLabel?: string
 }
 
 interface DockerRuntime {
@@ -70,6 +78,9 @@ interface DockerRuntime {
   path: string
   pid: number
   logs: string[]
+  projectId?: string
+  projectLabel?: string
+  projectPath?: string
 }
 
 interface DockerListResult {
@@ -80,8 +91,10 @@ interface DockerListResult {
 const DEFAULT_REGISTRY: PersistedRegistry = {
   aliases: {},
   actionLogs: {},
+  mutedLogs: {},
   localLaunches: {},
   savedServices: {},
+  customServices: {},
 }
 
 const COMMON_APP_PORTS = new Set([
@@ -96,6 +109,28 @@ const COMMON_APP_PORTS = new Set([
   8080,
   8081,
   9000,
+])
+
+const INFRA_SERVICE_NAMES = new Set([
+  'mysql',
+  'mysqld',
+  'redis',
+  'postgres',
+  'postgresql',
+  'mongo',
+  'mongodb',
+  'nginx',
+])
+
+const PROJECT_LEAF_NAMES = new Set([
+  'frontend',
+  'backend',
+  'client',
+  'server',
+  'web',
+  'api',
+  'admin',
+  'app',
 ])
 
 function registryPath() {
@@ -152,8 +187,10 @@ async function readRegistry(): Promise<PersistedRegistry> {
     return {
       aliases: parsed.aliases ?? {},
       actionLogs: parsed.actionLogs ?? {},
+      mutedLogs: parsed.mutedLogs ?? {},
       localLaunches: parsed.localLaunches ?? {},
       savedServices: parsed.savedServices ?? {},
+      customServices: parsed.customServices ?? {},
     }
   } catch {
     return DEFAULT_REGISTRY
@@ -181,6 +218,172 @@ function detectName(label: string) {
   if (normalized.includes('nginx')) return 'Nginx'
 
   return label
+}
+
+function detectStackLabel(input: {
+  commandName?: string
+  command?: string
+  cwd?: string
+  path?: string
+  detectedName?: string
+}) {
+  const corpus = [
+    input.detectedName ?? '',
+    input.commandName ?? '',
+    input.command ?? '',
+    input.cwd ?? '',
+    input.path ?? '',
+  ]
+    .join(' ')
+    .toLowerCase()
+
+  if (corpus.includes('spring')) return 'Spring Boot'
+  if (corpus.includes('react') || corpus.includes('vite')) return 'React'
+  if (corpus.includes('vue') || corpus.includes('nuxt')) return 'Vue'
+  if (corpus.includes('next')) return 'Next.js'
+  if (corpus.includes('node')) return 'Node.js'
+  if (corpus.includes('java')) return 'Java'
+  if (corpus.includes('python')) return 'Python'
+
+  return undefined
+}
+
+function normalizeFilePath(value?: string) {
+  return value?.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function inferProjectMetaFromPath(value?: string) {
+  const normalized = normalizeFilePath(value)
+  if (!normalized?.startsWith('/')) {
+    return {}
+  }
+
+  const segments = normalized.split('/').filter(Boolean)
+  if (segments.length === 0) {
+    return {}
+  }
+
+  const leaf = segments[segments.length - 1]
+  const lowerLeaf = leaf.toLowerCase()
+  if (
+    INFRA_SERVICE_NAMES.has(lowerLeaf) ||
+    normalized.includes('/var/db/redis') ||
+    normalized.includes('/var/lib/mysql') ||
+    normalized.includes('/postgres')
+  ) {
+    return {}
+  }
+
+  const labelIndex =
+    PROJECT_LEAF_NAMES.has(lowerLeaf) && segments.length >= 2
+      ? segments.length - 2
+      : segments.length - 1
+
+  const projectLabel = segments[labelIndex]
+  const projectPath = `/${segments.slice(0, labelIndex + 1).join('/')}`
+
+  return {
+    projectId: `project:${projectPath}`,
+    projectLabel,
+    projectPath,
+  }
+}
+
+function toCustomServiceId(id: string) {
+  return `custom:${id}`
+}
+
+function matchCustomServiceConfig(
+  runtime: Pick<LocalRuntime, 'port' | 'host' | 'cwd' | 'path'>,
+  config: CustomServiceConfig,
+) {
+  if (config.port !== runtime.port) {
+    return false
+  }
+
+  const configHost = (config.host || 'localhost').toLowerCase()
+  if (configHost !== (runtime.host || 'localhost').toLowerCase()) {
+    return false
+  }
+
+  const runtimePath = normalizeFilePath(runtime.cwd ?? runtime.path)
+  const configPaths = [config.cwd, config.projectPath]
+    .map((value) => normalizeFilePath(value))
+    .filter(Boolean)
+
+  if (configPaths.length === 0 || !runtimePath) {
+    return true
+  }
+
+  return configPaths.some((value) => value === runtimePath)
+}
+
+function findCustomConfigByRuntime(
+  registry: PersistedRegistry,
+  runtime: Pick<LocalRuntime, 'port' | 'host' | 'cwd' | 'path'>,
+) {
+  return Object.values(registry.customServices).find((config) =>
+    matchCustomServiceConfig(runtime, config),
+  )
+}
+
+function findCustomConfigById(registry: PersistedRegistry, id: string) {
+  if (!id.startsWith('custom:')) {
+    return undefined
+  }
+
+  return registry.customServices[id.slice('custom:'.length)]
+}
+
+function resolveLocalServiceId(runtime: LocalRuntime, registry: PersistedRegistry) {
+  const exactLocalId = `local:${runtime.port}`
+  if (registry.localLaunches[exactLocalId] || registry.savedServices[exactLocalId]) {
+    return exactLocalId
+  }
+
+  const launchMatch = Object.entries(registry.localLaunches).find(([, launch]) => {
+    const samePort =
+      launch.lastKnownPort === runtime.port || launch.expectedPort === runtime.port
+    if (!samePort) return false
+
+    const normalizedCwd = normalizeFilePath(launch.cwd)
+    const runtimeCwd = normalizeFilePath(runtime.cwd)
+    if (!normalizedCwd || !runtimeCwd) return true
+
+    return normalizedCwd === runtimeCwd
+  })
+  if (launchMatch) {
+    return launchMatch[0]
+  }
+
+  const savedMatch = Object.entries(registry.savedServices).find(([, saved]) => {
+    if (saved.port !== runtime.port) return false
+
+    const normalizedCwd = normalizeFilePath(saved.cwd)
+    const runtimeCwd = normalizeFilePath(runtime.cwd)
+    if (!normalizedCwd || !runtimeCwd) return true
+
+    return normalizedCwd === runtimeCwd
+  })
+  if (savedMatch) {
+    return savedMatch[0]
+  }
+
+  const customMatch = findCustomConfigByRuntime(registry, runtime)
+  if (customMatch) {
+    return toCustomServiceId(customMatch.id)
+  }
+
+  return exactLocalId
+}
+
+function suppressClearedLogs(registry: PersistedRegistry, id: string, lines: string[]) {
+  const mutedLines = registry.mutedLogs[id]
+  if (!mutedLines?.length) {
+    return lines
+  }
+
+  return lines.filter((line) => !mutedLines.includes(line))
 }
 
 function decodeEscapedText(value: string) {
@@ -252,12 +455,13 @@ async function readLogTail(filePath?: string) {
 async function getProcessInfo(pid: number) {
   try {
     const { stdout } = await execFileAsync('ps', [
-      '-o',
-      'command=',
+      '-ww',
       '-o',
       'etime=',
       '-o',
       'comm=',
+      '-o',
+      'command=',
       '-p',
       String(pid),
     ])
@@ -268,7 +472,7 @@ async function getProcessInfo(pid: number) {
       .filter(Boolean)
 
     const line = decodeEscapedText(lines[0] ?? '')
-    const match = line.match(/^(.*\S)\s+(\S+)\s+(\S+)$/)
+    const match = line.match(/^(\S+)\s+(\S+)\s+(.*)$/)
 
     if (!match) {
       return {
@@ -279,9 +483,9 @@ async function getProcessInfo(pid: number) {
     }
 
     return {
-      command: decodeEscapedText(match[1].trim()),
-      uptime: formatElapsed(match[2]),
-      commandName: decodeEscapedText(match[3].trim()),
+      command: decodeEscapedText(match[3].trim()),
+      uptime: formatElapsed(match[1]),
+      commandName: decodeEscapedText(path.basename(match[2].trim())),
     }
   } catch {
     return {
@@ -327,6 +531,20 @@ async function resolveLaunchShell() {
   }
 
   return '/bin/sh'
+}
+
+function buildShellLaunch(shell: string, command: string) {
+  if (process.platform === 'win32') {
+    return {
+      file: shell,
+      args: ['/d', '/s', '/c', command],
+    }
+  }
+
+  return {
+    file: shell,
+    args: ['-lc', `set -f; ${command}`],
+  }
 }
 
 function getCommandToken(command?: string) {
@@ -442,6 +660,13 @@ async function listLocalServices() {
       cwd,
       uptime: info.uptime,
       path: cwd || info.command,
+      stackLabel: detectStackLabel({
+        commandName: currentCommandName || info.commandName,
+        command: info.command,
+        cwd,
+        path: cwd || info.command,
+        detectedName: detectName(currentCommandName || info.commandName),
+      }),
     })
   }
 
@@ -463,19 +688,46 @@ function parseDockerPorts(input: string) {
   }))
 }
 
+function parseDockerLabels(input: string) {
+  const labels: Record<string, string> = {}
+  for (const entry of input.split(',')) {
+    const separatorIndex = entry.indexOf('=')
+    if (separatorIndex <= 0) continue
+    labels[entry.slice(0, separatorIndex)] = entry.slice(separatorIndex + 1)
+  }
+  return labels
+}
+
+function parseDockerDesktopPorts(labels: Record<string, string>) {
+  return Object.entries(labels)
+    .filter(([key, value]) => key.startsWith('desktop.docker.io/ports/') && value.includes(':'))
+    .map(([key, value]) => {
+      const match = key.match(/desktop\.docker\.io\/ports\/(\d+)\/(tcp|udp)$/)
+      if (!match) return null
+      const hostPort = Number(value.split(':').pop())
+      if (!hostPort) return null
+      return {
+        hostPort,
+        containerPort: Number(match[1]),
+        protocol: match[2] as ServiceProtocol,
+      }
+    })
+    .filter(Boolean) as Array<{ hostPort: number; containerPort: number; protocol: ServiceProtocol }>
+}
+
 async function listDockerServices(): Promise<DockerListResult> {
   try {
     const dockerBinary = await resolveDockerBinary()
     if (!dockerBinary) {
       return {
         services: [],
-        error: 'Docker CLI was not found. Open Docker Desktop or install the Docker CLI.',
+        error: '没有找到 Docker CLI。请先打开 Docker Desktop，或安装 Docker 命令行工具。',
       }
     }
 
     const { stdout } = await execFileAsync(dockerBinary, ['ps', '-a', '--format', '{{json .}}'])
     const lines = stdout.split('\n').filter(Boolean)
-    const services: DockerRuntime[] = []
+    const uniquePortServices = new Map<number, DockerRuntime>()
 
     for (const line of lines) {
       const item = JSON.parse(line) as {
@@ -484,10 +736,27 @@ async function listDockerServices(): Promise<DockerListResult> {
         Names: string
         Ports: string
         Status: string
+        Labels: string
       }
 
-      const ports = parseDockerPorts(item.Ports)
+      const labels = parseDockerLabels(item.Labels ?? '')
+      const parsedPorts = parseDockerPorts(item.Ports)
+      const ports = parsedPorts.length > 0 ? parsedPorts : parseDockerDesktopPorts(labels)
       if (ports.length === 0) continue
+      const workingDir = decodeEscapedText(labels['com.docker.compose.project.working_dir'] ?? '')
+      const composeProject = labels['com.docker.compose.project']
+      const composeService = labels['com.docker.compose.service']?.trim()
+      const serviceLabel =
+        composeService ||
+        item.Names.replace(new RegExp(`^${composeProject ?? ''}[-_]`), '')
+      const lowerServiceLabel = serviceLabel.toLowerCase()
+      const dockerProjectMeta = INFRA_SERVICE_NAMES.has(lowerServiceLabel)
+        ? {}
+        : {
+            projectLabel: serviceLabel,
+            projectId: `docker-project:${workingDir || composeProject || item.ID}:${serviceLabel}`,
+            projectPath: workingDir || undefined,
+          }
 
       let logs: string[] = []
       try {
@@ -502,7 +771,7 @@ async function listDockerServices(): Promise<DockerListResult> {
       }
 
       for (const mapped of ports) {
-        services.push({
+        const runtime: DockerRuntime = {
           id: `docker:${item.ID}:${mapped.hostPort}`,
           containerId: item.ID,
           containerName: item.Names,
@@ -512,14 +781,22 @@ async function listDockerServices(): Promise<DockerListResult> {
           protocol: mapped.protocol,
           uptime: item.Status,
           status: item.Status.toLowerCase().includes('up') ? 'active' : 'inactive',
-          path: item.Image,
+          path: workingDir || item.Image,
           pid: 0,
           logs,
-        })
+          projectId: dockerProjectMeta.projectId,
+          projectLabel: dockerProjectMeta.projectLabel,
+          projectPath: dockerProjectMeta.projectPath,
+        }
+
+        const existing = uniquePortServices.get(mapped.hostPort)
+        if (!existing || existing.status !== 'active') {
+          uniquePortServices.set(mapped.hostPort, runtime)
+        }
       }
     }
 
-    return { services: services.sort((a, b) => a.port - b.port) }
+    return { services: [...uniquePortServices.values()].sort((a, b) => a.port - b.port) }
   } catch (error) {
     return {
       services: [],
@@ -533,37 +810,220 @@ function toSavedService(
   launchMeta: PersistedLaunch | undefined,
   alias: string | undefined,
 ): SavedService {
+  const detectedName = detectName(runtime.commandName)
+  const projectMeta = inferProjectMetaFromPath(launchMeta?.cwd ?? runtime.cwd ?? runtime.path)
   return {
     alias,
-    command: launchMeta?.command ?? runtime.command,
+    command: runtime.command || launchMeta?.command || runtime.commandName,
     cwd: launchMeta?.cwd ?? runtime.cwd,
     port: runtime.port,
     host: runtime.host,
     protocol: runtime.protocol,
-    detectedName: detectName(runtime.commandName),
-    path: runtime.path,
+    detectedName,
+    path: runtime.path || runtime.cwd || runtime.command,
     source: 'local',
+    stackLabel: runtime.stackLabel ?? detectStackLabel({
+      commandName: runtime.commandName,
+      command: runtime.command,
+      cwd: launchMeta?.cwd ?? runtime.cwd,
+      path: runtime.path,
+      detectedName,
+    }),
+    ...projectMeta,
   }
+}
+
+async function inferLaunchCommand(cwd?: string, detectedName?: string) {
+  if (!cwd) return undefined
+
+  const pathExists = async (target: string) => {
+    try {
+      await fs.access(target)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const readJson = async <T>(target: string) => {
+    try {
+      const content = await fs.readFile(target, 'utf8')
+      return JSON.parse(content) as T
+    } catch {
+      return undefined
+    }
+  }
+
+  const packageJson = await readJson<{ scripts?: Record<string, string> }>(
+    path.join(cwd, 'package.json'),
+  )
+  const packageScripts = packageJson?.scripts ?? {}
+  if (packageScripts.dev) {
+    if (await pathExists(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm dev'
+    if (await pathExists(path.join(cwd, 'yarn.lock'))) return 'yarn dev'
+    return 'npm run dev'
+  }
+  if (packageScripts.start) {
+    if (await pathExists(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm start'
+    if (await pathExists(path.join(cwd, 'yarn.lock'))) return 'yarn start'
+    return 'npm run start'
+  }
+
+  if (await pathExists(path.join(cwd, 'mvnw'))) {
+    return './mvnw spring-boot:run'
+  }
+
+  if (await pathExists(path.join(cwd, 'pom.xml'))) {
+    return 'mvn spring-boot:run'
+  }
+
+  if (await pathExists(path.join(cwd, 'gradlew'))) {
+    return './gradlew bootRun'
+  }
+
+  if (await pathExists(path.join(cwd, 'package.json'))) {
+    return 'npm run dev'
+  }
+
+  if (await pathExists(path.join(cwd, 'requirements.txt'))) {
+    return 'python app.py'
+  }
+
+  if (await pathExists(path.join(cwd, 'pyproject.toml'))) {
+    return 'python -m uvicorn main:app --reload'
+  }
+
+  if (await pathExists(path.join(cwd, 'main.py'))) {
+    return 'python main.py'
+  }
+
+  if (await pathExists(path.join(cwd, 'manage.py'))) {
+    return 'python manage.py runserver'
+  }
+
+  if (await pathExists(path.join(cwd, 'go.mod'))) {
+    return 'go run .'
+  }
+
+  if (await pathExists(path.join(cwd, 'compose.yaml')) || await pathExists(path.join(cwd, 'docker-compose.yml'))) {
+    return 'docker compose up -d'
+  }
+
+  if ((await pathExists(path.join(cwd, 'start.sh'))) || (await pathExists(path.join(cwd, 'run.sh')))) {
+    return './start.sh'
+  }
+
+  if (await pathExists(path.join(cwd, 'ollama'))) {
+    return './ollama serve'
+  }
+
+  if (detectedName === 'Java' || detectedName === 'Spring Boot') {
+    return 'mvn spring-boot:run'
+  }
+
+  if (detectedName === 'Python') {
+    return 'python main.py'
+  }
+
+  if (detectedName === 'Node.js' || detectedName === 'React' || detectedName === 'Vue') {
+    return 'npm run dev'
+  }
+
+  if (detectedName === 'Go') {
+    return 'go run .'
+  }
+
+  return undefined
+}
+
+async function stopRedisViaBrewIfNeeded(runtime?: LocalRuntime) {
+  if (!runtime) return false
+
+  const corpus = `${runtime.commandName} ${runtime.command} ${runtime.path}`.toLowerCase()
+  if (!corpus.includes('redis')) {
+    return false
+  }
+
+  try {
+    await execFileAsync('brew', ['services', 'stop', 'redis'])
+    return true
+  } catch {
+    return false
+  }
+}
+
+function describeServiceForUser(runtime?: LocalRuntime) {
+  if (!runtime) return '当前服务'
+  return `${detectName(runtime.commandName)}（端口 ${runtime.port}）`
+}
+
+async function findRuntimeById(id: string, registry: PersistedRegistry) {
+  const services = await listLocalServices()
+  return services.find((service) => resolveLocalServiceId(service, registry) === id)
+}
+
+function resolveSavedPort(registry: PersistedRegistry, id: string) {
+  return (
+    registry.localLaunches[id]?.lastKnownPort ??
+    registry.localLaunches[id]?.expectedPort ??
+    registry.savedServices[id]?.port ??
+    findCustomConfigById(registry, id)?.port
+  )
 }
 
 export async function listServices(): Promise<ServiceItem[]> {
   const registry = await readRegistry()
   const dockerResult = await listDockerServices()
   const docker = dockerResult.services
-  const dockerPorts = new Set(docker.map((service) => service.port))
+  const dockerPorts = new Set(
+    docker.filter((service) => service.status === 'active').map((service) => service.port),
+  )
   const local = (await listLocalServices()).filter((runtime) => !dockerPorts.has(runtime.port))
 
   const localServices = await Promise.all(
     local.map(async (runtime) => {
-      const id = `local:${runtime.port}`
+      const id = resolveLocalServiceId(runtime, registry)
       const launchMeta = registry.localLaunches[id]
-      const alias = registry.aliases[id] ?? launchMeta?.alias
+      const saved = registry.savedServices[id]
+      const custom = findCustomConfigById(registry, id)
+      const alias = registry.aliases[id] ?? launchMeta?.alias ?? custom?.alias ?? saved?.alias
       const runtimeLogs = await readLogTail(launchMeta?.logFile)
-      const logs = mergeLogs(registry.actionLogs[id] ?? [], runtimeLogs)
+      const logs = suppressClearedLogs(
+        registry,
+        id,
+        mergeLogs(registry.actionLogs[id] ?? [], runtimeLogs),
+      )
 
       if (launchMeta) {
         launchMeta.lastKnownPort = runtime.port
+        if (!launchMeta.command || launchMeta.command.length < runtime.command.length) {
+          launchMeta.command = runtime.command
+        }
+        if (!launchMeta.cwd && runtime.cwd) {
+          launchMeta.cwd = runtime.cwd
+        }
       }
+
+      if (
+        saved &&
+        (
+          !saved.command ||
+          !saved.path ||
+          !saved.cwd ||
+          saved.command.length < runtime.command.length
+        )
+      ) {
+        registry.savedServices[id] = toSavedService(runtime, launchMeta, alias)
+      }
+
+      const projectMeta =
+        custom
+          ? {
+              projectId: `project:${custom.projectPath || custom.cwd || custom.serviceName}`,
+              projectLabel: custom.projectLabel,
+              projectPath: custom.projectPath || custom.cwd || runtime.cwd || runtime.path,
+            }
+          : inferProjectMetaFromPath(saved?.cwd ?? runtime.cwd ?? runtime.path)
 
       return {
         id,
@@ -572,18 +1032,22 @@ export async function listServices(): Promise<ServiceItem[]> {
         status: 'active' as ServiceStatus,
         source: 'local' as ServiceSource,
         customAlias: alias,
-        detectedName: detectName(runtime.commandName),
-        path: runtime.path,
+        detectedName: custom?.serviceName || saved?.detectedName || detectName(runtime.commandName),
+        path: custom?.projectPath || runtime.path || runtime.cwd || runtime.command,
         uptime: runtime.uptime,
         logs,
         host: runtime.host,
         protocol: runtime.protocol,
-        command: launchMeta?.command ?? runtime.command,
-        cwd: launchMeta?.cwd ?? runtime.cwd,
-        restartable: Boolean(launchMeta?.command),
+        command: custom?.command || runtime.command || launchMeta?.command || saved?.command,
+        cwd: custom?.cwd ?? custom?.projectPath ?? launchMeta?.cwd ?? runtime.cwd ?? saved?.cwd,
+        notes: custom?.stackLabel ?? saved?.stackLabel ?? runtime.stackLabel,
+        projectId: projectMeta.projectId,
+        projectLabel: projectMeta.projectLabel,
+        projectPath: projectMeta.projectPath,
+        restartable: Boolean(custom?.command || launchMeta?.command || saved?.command || runtime.command),
         stoppable: true,
         recordable: true,
-        recorded: Boolean(registry.savedServices[id]),
+        recorded: Boolean(registry.savedServices[id] || custom),
         launchedByPortMaster: Boolean(launchMeta),
       }
     }),
@@ -592,28 +1056,66 @@ export async function listServices(): Promise<ServiceItem[]> {
   const activeLocalIds = new Set(localServices.map((service) => service.id))
   const rememberedServices: ServiceItem[] = Object.entries(registry.savedServices)
     .filter(([id, saved]) => saved.source === 'local' && !activeLocalIds.has(id))
-    .map(([id, saved]) => ({
-      id,
-      port: saved.port,
+    .map(([id, saved]) => {
+      const normalizedProjectMeta = inferProjectMetaFromPath(saved.cwd ?? saved.path)
+      return {
+        id,
+        port: saved.port,
+        pid: 0,
+        status: 'inactive' as ServiceStatus,
+        source: 'local' as ServiceSource,
+        customAlias: registry.aliases[id] ?? saved.alias,
+        detectedName: saved.detectedName,
+        path: saved.path,
+        uptime: 'stopped',
+        logs: mergeLogs(registry.actionLogs[id] ?? []),
+        host: saved.host,
+        protocol: saved.protocol,
+        command: saved.command,
+        cwd: saved.cwd,
+        notes: saved.stackLabel,
+        projectId: normalizedProjectMeta.projectId,
+        projectLabel: normalizedProjectMeta.projectLabel,
+        projectPath: normalizedProjectMeta.projectPath,
+        restartable: true,
+        stoppable: false,
+        recordable: true,
+        recorded: true,
+        launchedByPortMaster: Boolean(registry.localLaunches[id]),
+      }
+    })
+
+  const rememberedCustomServices: ServiceItem[] = Object.values(registry.customServices)
+    .map((config) => ({
+      id: toCustomServiceId(config.id),
+      port: config.port,
       pid: 0,
       status: 'inactive' as ServiceStatus,
       source: 'local' as ServiceSource,
-      customAlias: registry.aliases[id] ?? saved.alias,
-      detectedName: saved.detectedName,
-      path: saved.path,
+      customAlias: registry.aliases[toCustomServiceId(config.id)] ?? config.alias,
+      detectedName: config.serviceName,
+      path: config.projectPath || config.cwd || config.command,
       uptime: 'stopped',
-      logs: mergeLogs(registry.actionLogs[id] ?? []),
-      host: saved.host,
-      protocol: saved.protocol,
-      command: saved.command,
-      cwd: saved.cwd,
+      logs: suppressClearedLogs(
+        registry,
+        toCustomServiceId(config.id),
+        mergeLogs(registry.actionLogs[toCustomServiceId(config.id)] ?? []),
+      ),
+      host: config.host || 'localhost',
+      protocol: 'tcp' as ServiceProtocol,
+      command: config.command,
+      cwd: config.cwd || config.projectPath,
+      notes: config.stackLabel || config.notes,
+      projectId: `project:${config.projectPath || config.cwd || config.serviceName}`,
+      projectLabel: config.projectLabel,
+      projectPath: config.projectPath || config.cwd || config.command,
       restartable: true,
       stoppable: false,
       recordable: true,
       recorded: true,
-      launchedByPortMaster: Boolean(registry.localLaunches[id]),
-      notes: 'Recorded service',
+      launchedByPortMaster: Boolean(registry.localLaunches[toCustomServiceId(config.id)]),
     }))
+    .filter((service) => !activeLocalIds.has(service.id))
 
   const dockerServices: ServiceItem[] = docker.map((container) => {
     const alias = registry.aliases[container.id]
@@ -628,12 +1130,19 @@ export async function listServices(): Promise<ServiceItem[]> {
       detectedName: detectName(container.containerName || container.image),
       path: container.path,
       uptime: container.uptime,
-      logs: mergeLogs(registry.actionLogs[container.id] ?? [], container.logs),
+      logs: suppressClearedLogs(
+        registry,
+        container.id,
+        mergeLogs(registry.actionLogs[container.id] ?? [], container.logs),
+      ),
       host: container.host,
       protocol: container.protocol,
       containerId: container.containerId,
       containerName: container.containerName,
       image: container.image,
+      projectId: container.projectId,
+      projectLabel: container.projectLabel,
+      projectPath: container.projectPath,
       restartable: true,
       stoppable: true,
       recordable: false,
@@ -650,7 +1159,7 @@ export async function listServices(): Promise<ServiceItem[]> {
 
   await writeRegistry(registry)
 
-  return [...localServices, ...rememberedServices, ...dockerServices]
+  return [...localServices, ...rememberedServices, ...rememberedCustomServices, ...dockerServices]
     .sort((a, b) => a.port - b.port)
 }
 
@@ -684,18 +1193,36 @@ export async function stopService(id: string) {
   if (id.startsWith('docker:')) {
     const dockerBinary = await resolveDockerBinary()
     if (!dockerBinary) {
-      throw new Error('Docker CLI was not found. Open Docker Desktop or install the Docker CLI.')
+      throw new Error('没有找到 Docker CLI。请先打开 Docker Desktop，或安装 Docker 命令行工具。')
     }
     const containerId = id.split(':')[1]
     await execFileAsync(dockerBinary, ['stop', containerId])
-    appendActionLog(registry, id, 'container stopped from PortMaster')
+    const startedAt = Date.now()
+    let stopped = false
+    while (Date.now() - startedAt < 10_000) {
+      const dockerState = await listDockerServices()
+      const matched = dockerState.services.find((service) => service.id === id)
+      if (!matched || matched.status !== 'active') {
+        stopped = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+    appendActionLog(
+      registry,
+      id,
+      stopped ? 'container stopped from PortMaster' : 'container stop requested but it still appears active',
+    )
     await writeRegistry(registry)
     return listServices()
   }
 
-  const port = Number(id.split(':')[1])
-  const services = await listLocalServices()
-  const current = services.find((service) => service.port === port)
+  const current = await findRuntimeById(id, registry)
+  const port = current?.port ?? resolveSavedPort(registry, id)
+
+  if (!port) {
+    throw new Error('Unable to resolve the port for this local service.')
+  }
 
   if (current?.pid) {
     process.kill(current.pid, 'SIGTERM')
@@ -703,7 +1230,37 @@ export async function stopService(id: string) {
     await writeRegistry(registry)
   }
 
-  await waitForLocalPortState(port, false)
+  await waitForLocalPortState(port, false, 2500)
+  const remaining = (await listLocalServices()).find((service) => service.port === port)
+  if (remaining) {
+    const stoppedByBrew = await stopRedisViaBrewIfNeeded(remaining)
+    if (stoppedByBrew) {
+      appendActionLog(registry, id, 'brew services stop requested for redis')
+      await writeRegistry(registry)
+      await waitForLocalPortState(port, false, 4000)
+    } else {
+      try {
+        process.kill(remaining.pid, 'SIGKILL')
+        appendActionLog(registry, id, `sent SIGKILL to pid ${remaining.pid}`)
+        await writeRegistry(registry)
+        await waitForLocalPortState(port, false, 1500)
+      } catch {
+        // ignore fallback kill failures
+      }
+    }
+  }
+
+  const stillRunning = (await listLocalServices()).find((service) => service.port === port)
+  if (stillRunning) {
+    appendActionLog(
+      registry,
+      id,
+      `stop request did not fully close port ${port}; process ${stillRunning.pid} is still listening`,
+    )
+    await writeRegistry(registry)
+    throw new Error(`端口 ${port} 还没有真正关闭，请先结束 ${describeServiceForUser(stillRunning)} 后再试。`)
+  }
+
   return listServices()
 }
 
@@ -713,40 +1270,66 @@ export async function restartService(id: string) {
   if (id.startsWith('docker:')) {
     const dockerBinary = await resolveDockerBinary()
     if (!dockerBinary) {
-      throw new Error('Docker CLI was not found. Open Docker Desktop or install the Docker CLI.')
+      throw new Error('没有找到 Docker CLI。请先打开 Docker Desktop，或安装 Docker 命令行工具。')
     }
     const containerId = id.split(':')[1]
-    await execFileAsync(dockerBinary, ['restart', containerId])
-    appendActionLog(registry, id, 'container restart requested from PortMaster')
+    await execFileAsync(dockerBinary, ['start', containerId])
+    const startedAt = Date.now()
+    let started = false
+    while (Date.now() - startedAt < 12_000) {
+      const dockerState = await listDockerServices()
+      const matched = dockerState.services.find((service) => service.id === id)
+      if (matched?.status === 'active') {
+        started = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    }
+    appendActionLog(
+      registry,
+      id,
+      started ? 'container start requested from PortMaster' : 'container start requested but the container did not become active',
+    )
     await writeRegistry(registry)
+    if (!started) {
+      throw new Error('Docker container did not become active after the start request.')
+    }
     return listServices()
   }
 
   const launchMeta = registry.localLaunches[id]
   const savedMeta = registry.savedServices[id]
-  const command = launchMeta?.command ?? savedMeta?.command
-  const cwd = launchMeta?.cwd ?? savedMeta?.cwd
-  const alias = launchMeta?.alias ?? savedMeta?.alias
+  const customMeta = findCustomConfigById(registry, id)
+  const command = customMeta?.command ?? launchMeta?.command ?? savedMeta?.command
+  const cwd = customMeta?.cwd ?? customMeta?.projectPath ?? launchMeta?.cwd ?? savedMeta?.cwd
+  const alias = customMeta?.alias ?? launchMeta?.alias ?? savedMeta?.alias
   const expectedPort =
-    launchMeta?.expectedPort ?? launchMeta?.lastKnownPort ?? savedMeta?.port
+    customMeta?.port ?? launchMeta?.expectedPort ?? launchMeta?.lastKnownPort ?? savedMeta?.port
+  const usableCommand = command && !command.endsWith('/Ja') ? command : undefined
+  const fallbackCommand =
+    usableCommand ??
+    await inferLaunchCommand(cwd, customMeta?.serviceName ?? savedMeta?.detectedName)
 
-  if (!command) {
-    throw new Error('This local service has no recorded launch command yet.')
+  if (!fallbackCommand) {
+    throw new Error(
+      '这个服务还没有可复用的启动命令。请先到“自定义”里补充命令，或者手动启动一次后重新记录。',
+    )
   }
 
   appendActionLog(registry, id, 'restart requested from PortMaster')
   await writeRegistry(registry)
 
-  const current = (await listLocalServices()).find((service) => `local:${service.port}` === id)
+  const current = await findRuntimeById(id, registry)
   if (current) {
     await stopService(id)
   }
 
   await launchLocalService({
-    command,
+    command: fallbackCommand,
     cwd,
     alias,
     expectedPort,
+    recordId: id,
   })
 
   return listServices()
@@ -757,17 +1340,28 @@ export async function launchLocalService(input: LocalLaunchInput) {
 
   const expectedPort = input.expectedPort ?? 0
   const registry = await readRegistry()
-  const recordId = `local:${expectedPort || Date.now()}`
+  const existingRuntime = expectedPort
+    ? (await listLocalServices()).find((service) => service.port === expectedPort)
+    : undefined
+  if (existingRuntime) {
+    const existingId = resolveLocalServiceId(existingRuntime, registry)
+    if (existingId !== input.recordId) {
+      throw new Error(
+        `端口 ${expectedPort} 已被 ${describeServiceForUser(existingRuntime)} 占用，请先关闭占用服务，或换一个端口。`,
+      )
+    }
+  }
+  const recordId = input.recordId ?? `local:${expectedPort || Date.now()}`
+  const keepStableId = recordId.startsWith('custom:')
   const logFile = path.join(
     logsDir(),
     `${recordId.replace(/[:]/g, '-')}.log`,
   )
   const shell = await resolveLaunchShell()
-
-  const child = spawn(input.command, {
+  const { file, args } = buildShellLaunch(shell, input.command)
+  const child = spawn(file, args, {
     cwd: input.cwd || process.cwd(),
     env: process.env,
-    shell,
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -786,7 +1380,7 @@ export async function launchLocalService(input: LocalLaunchInput) {
       settled = true
       reject(
         new Error(
-          `Unable to launch "${input.command}"${input.cwd ? ` in ${input.cwd}` : ''}: ${error.message}`,
+          `无法启动命令“${input.command}”${input.cwd ? `（目录：${input.cwd}）` : ''}：${error.message}`,
         ),
       )
     })
@@ -823,8 +1417,10 @@ export async function launchLocalService(input: LocalLaunchInput) {
 
   await writeRegistry(registry)
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 250))
+  let matchedPort: number | undefined
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 500))
     const services = await listLocalServices()
     const matched = [...services]
       .map((service) => ({
@@ -836,25 +1432,28 @@ export async function launchLocalService(input: LocalLaunchInput) {
       ?.service
 
     if (matched) {
-      const newId = `local:${matched.port}`
+      matchedPort = matched.port
+      const newId = keepStableId ? recordId : `local:${matched.port}`
       registry.localLaunches[newId] = {
         ...registry.localLaunches[recordId],
         lastKnownPort: matched.port,
         expectedPort: matched.port,
       }
-      delete registry.localLaunches[recordId]
+      if (newId !== recordId) {
+        delete registry.localLaunches[recordId]
+      }
 
-      if (registry.aliases[recordId]) {
+      if (registry.aliases[recordId] && newId !== recordId) {
         registry.aliases[newId] = registry.aliases[recordId]
         delete registry.aliases[recordId]
       }
 
-      if (registry.actionLogs[recordId]) {
+      if (registry.actionLogs[recordId] && newId !== recordId) {
         registry.actionLogs[newId] = registry.actionLogs[recordId]
         delete registry.actionLogs[recordId]
       }
 
-      if (registry.savedServices[recordId]) {
+      if (registry.savedServices[recordId] && newId !== recordId) {
         registry.savedServices[newId] = {
           ...registry.savedServices[recordId],
           port: matched.port,
@@ -862,6 +1461,13 @@ export async function launchLocalService(input: LocalLaunchInput) {
           cwd: input.cwd,
         }
         delete registry.savedServices[recordId]
+      } else if (registry.savedServices[newId]) {
+        registry.savedServices[newId] = {
+          ...registry.savedServices[newId],
+          port: matched.port,
+          command: input.command,
+          cwd: input.cwd ?? registry.savedServices[newId].cwd,
+        }
       }
 
       appendActionLog(registry, newId, `service bound to detected port ${matched.port}`)
@@ -869,6 +1475,25 @@ export async function launchLocalService(input: LocalLaunchInput) {
       await writeRegistry(registry)
       break
     }
+  }
+
+  if (expectedPort && !matchedPort) {
+    const runtimeLogs = await readLogTail(logFile)
+    const childExited = child.exitCode !== null
+    appendActionLog(
+      registry,
+      recordId,
+      childExited
+        ? `launch failed: process exited before port ${expectedPort} was detected`
+        : `launch timeout: port ${expectedPort} did not become reachable yet`,
+    )
+    await writeRegistry(registry)
+
+    throw new Error(
+      runtimeLogs[0]
+        ? `端口 ${expectedPort} 没有成功启动。最近一条日志：${runtimeLogs[0]}`
+        : `端口 ${expectedPort} 在等待时间内没有成功启动。`,
+    )
   }
 
   return listServices()
@@ -881,15 +1506,28 @@ export async function refreshServices() {
 export async function saveServiceRecord(input: SavedServiceInput) {
   const registry = await readRegistry()
   const local = await listLocalServices()
-  const runtime = local.find((service) => `local:${service.port}` === input.id)
+  const runtime = local.find((service) => resolveLocalServiceId(service, registry) === input.id)
 
   if (!runtime) {
     throw new Error('Only currently running local services can be recorded.')
   }
 
   const launchMeta = registry.localLaunches[input.id]
-  const alias = registry.aliases[input.id] ?? launchMeta?.alias
+  const customMeta = findCustomConfigById(registry, input.id)
+  const alias = registry.aliases[input.id] ?? launchMeta?.alias ?? customMeta?.alias
   registry.savedServices[input.id] = toSavedService(runtime, launchMeta, alias)
+  if (customMeta) {
+    registry.savedServices[input.id] = {
+      ...registry.savedServices[input.id],
+      command: customMeta.command || registry.savedServices[input.id].command,
+      cwd: customMeta.cwd || customMeta.projectPath || registry.savedServices[input.id].cwd,
+      projectId: `project:${customMeta.projectPath || customMeta.cwd || customMeta.serviceName}`,
+      projectLabel: customMeta.projectLabel,
+      projectPath: customMeta.projectPath || customMeta.cwd || runtime.cwd || runtime.path,
+      detectedName: customMeta.serviceName,
+      stackLabel: customMeta.stackLabel || registry.savedServices[input.id].stackLabel,
+    }
+  }
   appendActionLog(registry, input.id, 'service configuration recorded')
   await writeRegistry(registry)
   return listServices()
@@ -901,4 +1539,62 @@ export async function removeServiceRecord(input: SavedServiceInput) {
   appendActionLog(registry, input.id, 'service configuration record removed')
   await writeRegistry(registry)
   return listServices()
+}
+
+export async function clearServiceLogs(ids: string[]) {
+  const registry = await readRegistry()
+  const currentServices = await listServices()
+
+  for (const id of ids) {
+    const current = currentServices.find((service) => service.id === id)
+    registry.mutedLogs[id] = current?.logs ?? []
+    registry.actionLogs[id] = []
+    const launchMeta = registry.localLaunches[id]
+    if (launchMeta?.logFile) {
+      try {
+        await fs.writeFile(launchMeta.logFile, '', 'utf8')
+        registry.mutedLogs[id] = []
+      } catch {
+        continue
+      }
+    }
+  }
+
+  await writeRegistry(registry)
+  return listServices()
+}
+
+export async function listCustomServices() {
+  const registry = await readRegistry()
+  return Object.values(registry.customServices).sort((a, b) =>
+    a.projectLabel.localeCompare(b.projectLabel) ||
+    a.port - b.port ||
+    a.serviceName.localeCompare(b.serviceName),
+  )
+}
+
+export async function saveCustomService(input: CustomServiceConfig) {
+  const registry = await readRegistry()
+  registry.customServices[input.id] = {
+    ...input,
+    projectLabel: input.projectLabel.trim(),
+    projectPath: input.projectPath.trim(),
+    serviceName: input.serviceName.trim(),
+    host: input.host.trim() || 'localhost',
+    alias: input.alias?.trim() || undefined,
+    command: input.command.trim(),
+    cwd: input.cwd?.trim() || undefined,
+    stackLabel: input.stackLabel?.trim() || undefined,
+    icon: input.icon?.trim() || undefined,
+    notes: input.notes?.trim() || undefined,
+  }
+  await writeRegistry(registry)
+  return listCustomServices()
+}
+
+export async function removeCustomService(id: string) {
+  const registry = await readRegistry()
+  delete registry.customServices[id]
+  await writeRegistry(registry)
+  return listCustomServices()
 }

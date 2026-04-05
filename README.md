@@ -1,55 +1,116 @@
 # PortMaster
 
-PortMaster 是一个基于 `React + TypeScript + Tailwind CSS + Electron` 的桌面端 localhost 管理工具原型。它目前提供高扫描效率的单行横向列表界面，用于统一查看本地进程和 Docker 容器的端口状态。
+PortMaster 是一个面向开发环境的桌面控制台，用来统一管理 `localhost` 端口、本地项目、Docker 容器和常用启动命令。
 
-## 当前能力
+这一版的重点不只是“看见端口”，而是把下面这条链路做完整：
 
-- 左侧导航切换本地进程、Docker 容器、拓扑页和设置页
-- 顶部全局搜索，按端口号、别名、进程名实时过滤
-- 行式服务列表，包含状态、端口、别名、技术识别、PID、Uptime、Path、Actions
-- 支持模拟交互：
-  - 编辑并保存自定义别名
-  - 展开/收起微型日志窗口
-  - Restart
-  - Kill/Stop 开关
-  - Copy URL
-  - Open 到外部浏览器
+- 发现本地服务和 Docker 容器
+- 记录项目与服务
+- 保存或推断启动命令
+- 后续直接在面板里启动、关闭、查看日志
 
-## 技术栈
+仓库地址：`https://github.com/myxsf/PortMaster`
 
-- `React 19`
-- `TypeScript`
-- `Tailwind CSS v4`
-- `Zustand`
-- `framer-motion`
-- `Electron`
+## 软件截图
 
-## 启动方式
+![PortMaster 首页](./src/assets/hero.png)
 
-先安装依赖：
+![PortMaster 图标](./assets/portmaster-icon.svg)
+
+## 现在能做什么
+
+- 扫描本机监听端口，识别常见开发服务
+- 读取 Docker 容器端口，并在 Docker 页统一管理
+- 给服务设置别名，方便按项目或用途区分
+- 对正在运行的本地服务执行“记录”
+- 把手动填写的项目配置保存在“自定义”页
+- 常见 Java、Spring Boot、Node、Vue、Python、Go、Open WebUI、Ollama 提供命令示例
+- 对已经记录过的服务，关闭后仍保留记录，后续可以直接再次 `Start`
+- 项目组支持“记录项目”“全部启动”“全部关闭”
+- 日志中心支持在“开发日志 / 全部日志”之间切换，并按范围清理日志
+
+## 适合怎么用
+
+### 方式一：先手动启动，再记录
+
+适合已经有自己终端习惯的项目。
+
+1. 在终端里先启动项目
+2. 回到 PortMaster，找到对应端口
+3. 点击“记录”
+4. 以后这个服务即使关闭，也会保留在列表里
+5. 下次直接点击“启动”
+
+### 方式二：先在“自定义”里配置，再直接启动
+
+适合固定命令的项目，或者自动识别不到合适命令的项目。
+
+1. 打开左侧 `自定义`
+2. 填写项目名、服务名、端口、工作目录、启动命令
+3. 保存配置
+4. 点击 `按配置启动`
+5. 配置会同步出现在主列表里，后续可以直接复用
+
+## 页面说明
+
+### 首页
+
+- 展示项目简介
+- 提供 GitHub 仓库按钮
+- 预留讨论 Q 群按钮
+
+### 仪表盘
+
+- 只看本地服务
+- 支持搜索端口、别名、进程名、路径
+- 对本地项目提供“打开”“查看日志”“记录”“启动 / 关闭”
+
+### Docker 容器
+
+- 只看 Docker 容器
+- 支持“启动 / 停止”
+- 启动后会校验容器是否真的进入运行状态
+
+### 日志中心
+
+- 统一查看最近日志
+- 支持按项目或端口筛选
+- 支持清理当前筛选范围的日志
+
+### 自定义
+
+- 保存项目级配置
+- 给每个输入项提供示例
+- 必填项明确标记
+- 可直接按配置启动
+
+## 安装依赖
 
 ```bash
 npm install
 ```
 
-开发模式启动桌面应用：
+## 开发启动
+
+启动桌面应用：
 
 ```bash
 npm run dev
 ```
 
-这个命令会同时做两件事：
-
-1. 启动 Vite 开发服务器
-2. 自动打开 Electron 桌面窗口
-
-如果你只想启动前端页面调样式：
+只启动前端调试页：
 
 ```bash
 npm run dev:renderer
 ```
 
-## 构建方式
+只用生产构建结果预览桌面端：
+
+```bash
+npm run desktop:preview
+```
+
+## 构建
 
 构建前端和 Electron 主进程：
 
@@ -57,116 +118,120 @@ npm run dev:renderer
 npm run build
 ```
 
-生成应用图标资源：
+生成图标资源：
 
 ```bash
 npm run generate:icons
 ```
 
-用生产构建结果预览桌面应用：
+## 打包命令
+
+### macOS
+
+ARM 版本：
 
 ```bash
-npm run desktop:preview
+npm run dist:mac:arm64
 ```
 
-打包 macOS 桌面安装产物：
+Intel 版本：
+
+```bash
+npm run dist:mac:x64
+```
+
+也可以直接使用：
 
 ```bash
 npm run dist:mac
 ```
 
-`npm run dist:desktop` 目前等价于 `npm run dist:mac`。
+### Windows
 
-打包 Windows 安装产物：
+ARM 版本：
+
+```bash
+npm run dist:win:arm64
+```
+
+X64 版本：
+
+```bash
+npm run dist:win:x64
+```
+
+也可以直接使用：
 
 ```bash
 npm run dist:win
 ```
 
-Windows 配置已经准备了三类目标：
+## 直接下载 Release / 本地产物
 
-- `nsis` 安装包
-- `portable` 便携版
-- `zip` 压缩包
+打包后的文件默认在 `release/` 目录。
 
-说明：当前项目默认关闭了 macOS 自动签名，这样在本机没有配置 Apple Developer 证书，或环境里的 `codesign` 不是苹果原生命令时，也可以先顺利打包。
-
-如果你以后要启用正式签名，请先确认：
-
-```bash
-which codesign
-```
-
-输出应优先是：
-
-```bash
-/usr/bin/codesign
-```
-
-如果像你现在这样命中的是 Conda 的：
-
-```bash
-/opt/anaconda3/bin/codesign
-```
-
-那就需要先调整 `PATH`，否则 `electron-builder` 仍会在签名阶段报错。
-
-打包结果默认输出到：
-
-```bash
-release/
-```
-
-常见文件会类似：
+当前项目里常见的文件名包括：
 
 ```text
-release/PortMaster-0.0.0-arm64.dmg
-release/PortMaster-0.0.0-arm64-mac.zip
-release/PortMaster-0.0.0-x64-setup.exe
-release/PortMaster-0.0.0-x64-portable.exe
-release/PortMaster-0.0.0-x64.zip
+release/PortMaster-0.0.0-macos-arm64.dmg
+release/PortMaster-0.0.0-macos-arm64.zip
+release/PortMaster-0.0.0-windows-x64-setup.exe
+release/PortMaster-0.0.0-windows-x64-portable.exe
+release/PortMaster-0.0.0-windows-x64.zip
+release/PortMaster-0.0.0-windows-arm64-setup.exe
+release/PortMaster-0.0.0-windows-arm64-portable.exe
+release/PortMaster-0.0.0-windows-arm64.zip
 ```
 
-是否真的生成 Windows 文件，取决于当前机器环境是否支持对应目标的跨平台构建。
+如果你是从 GitHub Release 下载，优先选择：
 
-## 目录结构
+- macOS Apple Silicon：`PortMaster-0.0.0-macos-arm64.dmg`
+- Windows x64：`PortMaster-0.0.0-windows-x64-setup.exe`
+- 不想安装可用：`portable.exe`
 
-```text
-electron/
-  main.ts
-  preload.ts
-src/
-  components/
-  data/
-  lib/
-  store/
-  App.tsx
-  index.css
-  types.ts
+## 常见启动命令示例
+
+```bash
+# Spring Boot
+./mvnw spring-boot:run
+
+# Maven Java
+mvn spring-boot:run
+
+# Gradle Spring Boot
+./gradlew bootRun
+
+# React / Vue / Node
+npm run dev
+
+# Python
+python main.py
+
+# FastAPI
+python -m uvicorn main:app --reload
+
+# Go
+go run .
+
+# Open WebUI
+docker compose up -d
+
+# Ollama
+ollama serve
 ```
 
-## 关键文件
+## 使用建议
 
-- `electron/main.ts`
-  - Electron 主进程，负责创建桌面窗口
-- `electron/preload.ts`
-  - 暴露 `openExternal` 和 `copyText` 给前端
-- `assets/portmaster-icon.svg`
-  - 应用主图标源文件
-- `scripts/generate-icons.mjs`
-  - 自动生成 `png / icns / ico`
-- `src/store/useServiceStore.ts`
-  - Zustand 状态中心
-- `src/data/mockServices.ts`
-  - 5 个本地服务 + 3 个 Docker 容器 mock 数据
-- `src/components/ServiceRow.tsx`
-  - 单行服务组件
-- `src/components/ServiceTable.tsx`
-  - 列表表头和行为容器
+- 第一次启动不确定命令时，可以先手动启动一次，再回来“记录”
+- 项目有多个端口时，建议都放到同一个项目名下，方便“全部启动 / 全部关闭”
+- 如果点击“启动”后没起来，先看“查看日志”
+- Docker 服务没起来时，先确认 Docker Desktop 已启动，再检查 compose 文件和镜像状态
 
-## 下一步建议
+## 技术栈
 
-- 接入真实端口扫描和 PID 读取
-- 接入 Docker CLI 或 Docker Engine API
-- 用系统级命令替换当前 mock 的 restart / stop
-- 增加拓扑图视图和设置页表单
+- `React 19`
+- `TypeScript`
+- `Tailwind CSS v4`
+- `Zustand`
+- `Framer Motion`
+- `Electron`

@@ -71,14 +71,14 @@
       "package.json"
     ],
     "mac": {
-      "icon": "icon.icns",
+      "icon": "build/icon.png",
       "identity": null,
       "category": "public.app-category.developer-tools",
       "artifactName": "PortMaster-${version}-macos-${arch}.${ext}",
       "target": ["dmg", "zip"]
     },
     "win": {
-      "icon": "icon.ico",
+      "icon": "build/icon.ico",
       "artifactName": "PortMaster-${version}-windows-${arch}.${ext}",
       "target": ["nsis", "portable", "zip"]
     },

@@ -1,14 +1,15 @@
-import { Activity, Boxes, LayoutDashboard, Network, Settings2 } from 'lucide-react'
+import { Activity, Boxes, Home, LayoutDashboard, Network, Settings2 } from 'lucide-react'
 
 import type { AppView } from '../types'
 import portmasterIcon from '../../assets/portmaster-icon.svg'
 
 const items = [
-  { id: 'dashboard', label: 'Dashboard', caption: 'Local processes', icon: LayoutDashboard, enabled: true },
-  { id: 'docker', label: 'Docker Containers', caption: 'Docker management', icon: Boxes, enabled: true },
-  { id: 'topology', label: 'Port Topology', caption: 'Temporarily unavailable', icon: Network, enabled: false },
-  { id: 'networkLogs', label: 'Network Logs', caption: 'Temporarily unavailable', icon: Activity, enabled: false },
-  { id: 'settings', label: 'Settings', caption: 'Temporarily unavailable', icon: Settings2, enabled: false },
+  { id: 'home', label: '首页', caption: '介绍与链接', icon: Home, enabled: true },
+  { id: 'dashboard', label: '仪表盘', caption: '本地服务', icon: LayoutDashboard, enabled: true },
+  { id: 'docker', label: 'Docker 容器', caption: '容器管理', icon: Boxes, enabled: true },
+  { id: 'networkLogs', label: '日志中心', caption: '筛选服务日志', icon: Activity, enabled: true },
+  { id: 'settings', label: '自定义', caption: '命令、项目与端口', icon: Settings2, enabled: true },
+  { id: 'topology', label: '端口拓扑', caption: '暂未开放', icon: Network, enabled: false },
 ] as const
 
 interface SidebarProps {
@@ -32,7 +33,7 @@ export function Sidebar({ activeItem, onSelect }: SidebarProps) {
               v0.9
             </span>
           </div>
-          <p className="text-xs text-slate-500">desktop control plane</p>
+          <p className="text-xs text-slate-500">本地服务控制台</p>
         </div>
       </div>
 
@@ -78,7 +79,7 @@ export function Sidebar({ activeItem, onSelect }: SidebarProps) {
               </div>
               {selected ? (
                 <span className="ml-auto rounded-md bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#86EFAC]">
-                  Active
+                  当前
                 </span>
               ) : !enabled ? (
                 <span className="ml-auto rounded-md border border-[#31404e] bg-[#161d24] px-1.5 py-0.5 text-[10px] font-medium text-slate-400">

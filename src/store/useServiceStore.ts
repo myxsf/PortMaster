@@ -26,9 +26,19 @@ interface ServiceStore {
   toggleServiceStatus: (id: string) => Promise<void>
 }
 
+function normalizeDesktopError(error: unknown, fallback: string) {
+  const raw = error instanceof Error ? error.message : fallback
+
+  return raw
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim() || fallback
+}
+
 function requireDesktopApi() {
   if (!window.portmaster) {
-    throw new Error('Desktop runtime API is unavailable. Please open PortMaster as the desktop app.')
+    throw new Error('当前没有连接到桌面应用，请直接打开 PortMaster 客户端。')
   }
 
   return window.portmaster
@@ -60,7 +70,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to load services.'
+      const message = normalizeDesktopError(error, '加载服务列表失败。')
       set({
         isLoading: false,
         errorMessage: message,
@@ -80,7 +90,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to refresh services.'
+      const message = normalizeDesktopError(error, '刷新服务列表失败。')
       set({
         isMutating: false,
         errorMessage: message,
@@ -100,7 +110,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to launch local service.'
+      const message = normalizeDesktopError(error, '启动服务失败。')
       set({
         isMutating: false,
         errorMessage: message,
@@ -118,7 +128,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save alias.'
+      const message = normalizeDesktopError(error, '保存别名失败。')
       set({
         errorMessage: message,
       })
@@ -138,7 +148,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to update service record.'
+      const message = normalizeDesktopError(error, '更新记录失败。')
       set({
         errorMessage: message,
       })
@@ -163,7 +173,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to restart service.'
+      const message = normalizeDesktopError(error, '启动服务失败。')
       set({
         isMutating: false,
         errorMessage: message,
@@ -190,8 +200,7 @@ export const useServiceStore = create<ServiceStore>((set) => ({
         lastUpdatedAt: Date.now(),
       })
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to change service state.'
+      const message = normalizeDesktopError(error, '切换服务状态失败。')
       set({
         isMutating: false,
         errorMessage: message,

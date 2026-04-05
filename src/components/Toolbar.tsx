@@ -31,7 +31,7 @@ export function Toolbar({
           <input
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            placeholder="Global Search by Port, Alias, Process, and Container ID"
+            placeholder="按端口、别名、服务名、容器名搜索"
             className="w-full rounded-xl border border-[#26323d] bg-[#0d1319] py-2.5 pl-11 pr-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[#2496ED]/60 focus:shadow-[0_0_0_3px_rgba(36,150,237,0.12)]"
           />
         </div>
@@ -42,7 +42,7 @@ export function Toolbar({
           className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1f6f47] bg-[#133121] px-3 text-sm text-[#9bf3be] transition hover:border-[#22C55E]/50 hover:bg-[#174028]"
         >
           <Play className="h-4 w-4" />
-          Run Service
+          启动服务
         </button>
 
         <button
@@ -52,7 +52,7 @@ export function Toolbar({
           className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#2a333d] bg-[#1a2028] px-3 text-sm text-slate-200 transition hover:border-[#2496ED]/40 hover:bg-[#1c2631]"
         >
           <RefreshCcw className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} />
-          {isBusy ? 'Refreshing' : 'Refresh'}
+          {isBusy ? '刷新中' : '刷新'}
         </button>
 
         <div className="hidden items-center rounded-xl border border-[#2a333d] bg-[#1a2028] p-1 lg:flex">
@@ -70,7 +70,7 @@ export function Toolbar({
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {mode === 'develop' ? 'Develop' : 'All'}
+                {mode === 'develop' ? '开发' : '全部'}
               </button>
             )
           })}

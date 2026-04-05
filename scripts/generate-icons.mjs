@@ -50,7 +50,18 @@ async function generateMacIconset() {
     ),
   )
 
-  await execFileAsync('/usr/bin/iconutil', ['-c', 'icns', iconsetDir, '-o', path.join(buildDir, 'icon.icns')])
+  try {
+    await execFileAsync('/usr/bin/iconutil', [
+      '-c',
+      'icns',
+      iconsetDir,
+      '-o',
+      path.join(buildDir, 'icon.icns'),
+    ])
+  } catch (error) {
+    console.warn('iconutil failed, macOS packaging will fall back to build/icon.png')
+    console.warn(error instanceof Error ? error.message : String(error))
+  }
 }
 
 async function generateCommonPngs() {

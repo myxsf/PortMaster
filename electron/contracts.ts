@@ -20,6 +20,9 @@ export interface ServiceItem {
   containerId?: string
   containerName?: string
   image?: string
+  projectId?: string
+  projectLabel?: string
+  projectPath?: string
   restartable: boolean
   stoppable: boolean
   recordable: boolean
@@ -33,8 +36,24 @@ export interface LocalLaunchInput {
   cwd?: string
   alias?: string
   expectedPort?: number
+  recordId?: string
 }
 
 export interface SavedServiceInput {
   id: string
+}
+
+export interface CustomServiceConfig {
+  id: string
+  projectLabel: string
+  projectPath: string
+  serviceName: string
+  port: number
+  host: string
+  alias?: string
+  command: string
+  cwd?: string
+  stackLabel?: string
+  icon?: string
+  notes?: string
 }

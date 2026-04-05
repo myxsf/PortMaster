@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { LocalLaunchInput } from './contracts.js'
+import type { CustomServiceConfig, LocalLaunchInput } from './contracts.js'
 
 contextBridge.exposeInMainWorld('portmaster', {
   openExternal: async (url: string) => ipcRenderer.invoke('app:open-external', url),
@@ -17,4 +17,10 @@ contextBridge.exposeInMainWorld('portmaster', {
   restartService: async (id: string) => ipcRenderer.invoke('services:restart', id),
   launchLocalService: async (input: LocalLaunchInput) =>
     ipcRenderer.invoke('services:launch-local', input),
+  listCustomServices: async () => ipcRenderer.invoke('settings:custom-services:list'),
+  saveCustomService: async (input: CustomServiceConfig) =>
+    ipcRenderer.invoke('settings:custom-services:save', input),
+  removeCustomService: async (id: string) =>
+    ipcRenderer.invoke('settings:custom-services:remove', id),
+  clearServiceLogs: async (ids: string[]) => ipcRenderer.invoke('services:logs:clear', ids),
 })
