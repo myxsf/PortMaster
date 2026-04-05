@@ -13,7 +13,10 @@ dist-ssr
 *.local
 build
 electron-dist
-release
+release/*
+!release/*.dmg
+!release/*.zip
+!release/*.exe
 
 # Editor directories and files
 .vscode/*
