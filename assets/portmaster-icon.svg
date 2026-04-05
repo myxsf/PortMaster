@@ -1,0 +1,38 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="240" fill="#0F1115"/>
+  <rect x="108" y="108" width="808" height="808" rx="196" fill="url(#bgGlow)" stroke="url(#frame)" stroke-width="18"/>
+  <path d="M298 300C298 276.804 316.804 258 340 258H510C631.503 258 730 356.497 730 478C730 599.503 631.503 698 510 698H422V766C422 789.196 403.196 808 380 808H340C316.804 808 298 789.196 298 766V300Z" fill="url(#portFill)"/>
+  <path d="M422 362H504C568.065 362 620 413.935 620 478C620 542.065 568.065 594 504 594H422V362Z" fill="#0F1115"/>
+  <path d="M583 303L731 221C754.741 207.843 784 224.997 784 252.259V418.741C784 446.003 754.741 463.157 731 450L583 368V303Z" fill="url(#dockerBlue)"/>
+  <path d="M583 588L731 506C754.741 492.843 784 509.997 784 537.259V703.741C784 731.003 754.741 748.157 731 735L583 653V588Z" fill="url(#dockerBlueSoft)"/>
+  <circle cx="260" cy="260" r="26" fill="#22C55E"/>
+  <circle cx="770" cy="764" r="20" fill="#2496ED"/>
+  <path d="M225 801C327.5 671.5 453.5 607.5 603 609" stroke="url(#trace)" stroke-width="26" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bgGlow" x1="143" y1="144" x2="878" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#151A22"/>
+      <stop offset="1" stop-color="#0B0E13"/>
+    </linearGradient>
+    <linearGradient id="frame" x1="136" y1="118" x2="885" y2="903" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2496ED" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#22C55E" stop-opacity="0.4"/>
+    </linearGradient>
+    <linearGradient id="portFill" x1="298" y1="258" x2="734" y2="808" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3AA2FF"/>
+      <stop offset="0.58" stop-color="#22C55E"/>
+      <stop offset="1" stop-color="#A3E635"/>
+    </linearGradient>
+    <linearGradient id="dockerBlue" x1="583" y1="221" x2="791" y2="438" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CC6FF"/>
+      <stop offset="1" stop-color="#2496ED"/>
+    </linearGradient>
+    <linearGradient id="dockerBlueSoft" x1="583" y1="506" x2="791" y2="723" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4CC9FF"/>
+      <stop offset="1" stop-color="#1F6FDB"/>
+    </linearGradient>
+    <linearGradient id="trace" x1="225" y1="801" x2="603" y2="609" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2496ED"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+  </defs>
+</svg>
