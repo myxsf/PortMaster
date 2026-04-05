@@ -1,6 +1,17 @@
-import { app, BrowserWindow, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, shell, type WebContents } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+
+import {
+  launchLocalService,
+  listServices,
+  removeServiceRecord,
+  refreshServices,
+  restartService,
+  saveServiceRecord,
+  saveAlias,
+  stopService,
+} from './service-manager.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -17,6 +28,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   })
 
@@ -54,3 +66,16 @@ app.on('web-contents-created', (_event: Electron.Event, contents: WebContents) =
     return { action: 'deny' }
   })
 })
+
+ipcMain.handle('services:list', () => listServices())
+ipcMain.handle('services:refresh', () => refreshServices())
+ipcMain.handle('app:open-external', (_event, url: string) => shell.openExternal(url))
+ipcMain.handle('app:copy-text', (_event, value: string) => clipboard.writeText(value))
+ipcMain.handle('services:alias', (_event, id: string, alias: string) =>
+  saveAlias(id, alias),
+)
+ipcMain.handle('services:record', (_event, input) => saveServiceRecord(input))
+ipcMain.handle('services:unrecord', (_event, input) => removeServiceRecord(input))
+ipcMain.handle('services:stop', (_event, id: string) => stopService(id))
+ipcMain.handle('services:restart', (_event, id: string) => restartService(id))
+ipcMain.handle('services:launch-local', (_event, input) => launchLocalService(input))

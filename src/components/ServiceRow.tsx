@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Copy, ExternalLink, FileText, RotateCcw } from 'lucide-react'
+import { Bookmark, Copy, ExternalLink, FileText } from 'lucide-react'
 import { SiDocker } from 'react-icons/si'
 
 import { getServiceIcon } from '../lib/service-icon'
@@ -10,8 +10,8 @@ interface ServiceRowProps {
   service: ServiceItem
   expanded: boolean
   onAliasSave: (alias: string) => void
+  onToggleRecord: () => void
   onToggleLogs: () => void
-  onRestart: () => void
   onToggleStatus: () => void
   onOpen: () => void
   onCopyUrl: () => void
@@ -76,8 +76,8 @@ export function ServiceRow({
   service,
   expanded,
   onAliasSave,
+  onToggleRecord,
   onToggleLogs,
-  onRestart,
   onToggleStatus,
   onOpen,
   onCopyUrl,
@@ -86,6 +86,12 @@ export function ServiceRow({
   const [isEditingAlias, setIsEditingAlias] = useState(false)
   const { icon: TechIcon, className } = getServiceIcon(service.detectedName)
   const isRunning = service.status === 'active'
+  const stopLabel = isRunning
+    ? service.source === 'local' && (service.recorded || service.launchedByPortMaster)
+      ? 'Close'
+      : 'Kill'
+    : 'Start'
+  const secondaryPath = service.cwd ?? service.path
 
   return (
     <motion.div
@@ -96,7 +102,7 @@ export function ServiceRow({
       transition={{ duration: 0.18, ease: 'easeOut' }}
       className="group overflow-hidden border-b border-[#202a33] bg-[#12171f] transition hover:bg-[#16202a]"
     >
-      <div className="grid min-h-[94px] grid-cols-[150px_210px_250px_80px_92px_minmax(220px,1fr)_320px_40px] items-center gap-4 px-5 py-4">
+      <div className="grid min-h-[94px] grid-cols-[150px_210px_minmax(240px,1.2fr)_88px_130px_minmax(280px,1fr)_320px] items-center gap-4 px-5 py-4">
         <div className="relative pr-10">
           <StatusPill service={service} />
           <button
@@ -142,6 +148,12 @@ export function ServiceRow({
                 <span className="truncate text-sm font-medium text-slate-100">
                   {service.detectedName}
                 </span>
+                {service.recorded ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-[#1f6f47] bg-[#133121] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[#8ff0b8]">
+                    <Bookmark className="h-3 w-3" />
+                    Recorded
+                  </span>
+                ) : null}
                 {service.source === 'docker' ? (
                   <span className="inline-flex items-center gap-1 rounded-md border border-[#2496ED]/30 bg-[#0c2436] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[#66c6ff]">
                     <SiDocker className="h-3 w-3" />
@@ -149,7 +161,7 @@ export function ServiceRow({
                   </span>
                 ) : null}
               </div>
-              <div className="truncate text-xs text-[#6b7f99]">{service.path}</div>
+              <div className="truncate text-xs text-[#6b7f99]">{secondaryPath}</div>
             </div>
           </div>
         </div>
@@ -158,12 +170,14 @@ export function ServiceRow({
           {service.pid}
         </div>
 
-        <div className="text-sm text-slate-200">
+        <div className="whitespace-nowrap text-sm text-slate-200">
           {service.uptime}
         </div>
 
         <div>
-          <div className="truncate font-mono text-xs text-[#8a9aae]">{service.path}</div>
+          <div className="truncate font-mono text-xs text-[#8a9aae]" title={service.path}>
+            {service.path}
+          </div>
         </div>
 
         <div>
@@ -172,6 +186,7 @@ export function ServiceRow({
               <button
                 type="button"
                 onClick={onOpen}
+                disabled={!isRunning}
                 className="inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[#2b3540] bg-[#1b2129] px-3 text-[11px] font-medium text-slate-100 transition hover:border-[#2496ED]/40 hover:bg-[#1f2a36]"
               >
                 <ExternalLink className="h-3 w-3" />
@@ -187,15 +202,16 @@ export function ServiceRow({
               </button>
               <button
                 type="button"
-                onClick={onRestart}
+                onClick={onToggleRecord}
+                disabled={!service.recordable}
                 className="inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-[#2b3540] bg-[#1b2129] px-3 text-[11px] font-medium text-slate-100 transition hover:border-[#2496ED]/40 hover:bg-[#1f2a36]"
               >
-                <RotateCcw className="h-3 w-3" />
-                Restart
+                <Bookmark className="h-3 w-3" />
+                {service.recorded ? 'Recorded' : 'Record'}
               </button>
               <div className="flex h-10 min-w-0 items-center justify-between rounded-lg border border-[#2b3540] bg-[#1b2129] px-3">
                 <span className="shrink-0 text-[11px] font-medium text-slate-300">
-                  {isRunning ? 'Kill' : 'Start'}
+                  {stopLabel}
                 </span>
                 <div className="ml-3 shrink-0">
                   <ServiceSwitch checked={isRunning} onToggle={onToggleStatus} />
@@ -204,8 +220,6 @@ export function ServiceRow({
             </div>
           </div>
         </div>
-
-        <div aria-hidden="true" />
       </div>
 
       <AnimatePresence initial={false}>
@@ -218,9 +232,13 @@ export function ServiceRow({
             className="border-t border-[#202a33] bg-[#0b1016]"
           >
             <div className="terminal-scroll overflow-auto px-5 py-4 font-mono text-xs leading-6 text-slate-300">
-              {service.logs.map((line) => (
-                <div key={`${service.id}-${line}`}>{line}</div>
-              ))}
+              {service.logs.length > 0 ? (
+                service.logs.map((line) => (
+                  <div key={`${service.id}-${line}`}>{line}</div>
+                ))
+              ) : (
+                <div className="text-slate-500">No recent logs available for this service.</div>
+              )}
             </div>
           </motion.div>
         ) : null}

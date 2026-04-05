@@ -79,6 +79,7 @@
     },
     "win": {
       "icon": "icon.ico",
+      "artifactName": "PortMaster-${version}-windows-${arch}.${ext}",
       "target": ["nsis", "portable", "zip"]
     },
     "nsis": {
@@ -88,9 +89,6 @@
     },
     "portable": {
       "artifactName": "PortMaster-${version}-windows-${arch}-portable.${ext}"
-    },
-    "zip": {
-      "artifactName": "PortMaster-${version}-${os}-${arch}.${ext}"
     }
   }
 }

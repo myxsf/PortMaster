@@ -4,11 +4,11 @@ import type { AppView } from '../types'
 import portmasterIcon from '../../assets/portmaster-icon.svg'
 
 const items = [
-  { id: 'dashboard', label: 'Dashboard', caption: 'Local processes', icon: LayoutDashboard },
-  { id: 'docker', label: 'Docker Containers', caption: 'Docker management', icon: Boxes },
-  { id: 'topology', label: 'Port Topology', caption: 'Topology graph', icon: Network },
-  { id: 'networkLogs', label: 'Network Logs', caption: 'Runtime stream', icon: Activity },
-  { id: 'settings', label: 'Settings', caption: 'Preferences', icon: Settings2 },
+  { id: 'dashboard', label: 'Dashboard', caption: 'Local processes', icon: LayoutDashboard, enabled: true },
+  { id: 'docker', label: 'Docker Containers', caption: 'Docker management', icon: Boxes, enabled: true },
+  { id: 'topology', label: 'Port Topology', caption: 'Temporarily unavailable', icon: Network, enabled: false },
+  { id: 'networkLogs', label: 'Network Logs', caption: 'Temporarily unavailable', icon: Activity, enabled: false },
+  { id: 'settings', label: 'Settings', caption: 'Temporarily unavailable', icon: Settings2, enabled: false },
 ] as const
 
 interface SidebarProps {
@@ -37,18 +37,25 @@ export function Sidebar({ activeItem, onSelect }: SidebarProps) {
       </div>
 
       <nav className="space-y-1.5">
-        {items.map(({ id, label, caption, icon: Icon }) => {
-          const selected = id === activeItem
+        {items.map(({ id, label, caption, icon: Icon, enabled }) => {
+          const selected = enabled && id === activeItem
 
           return (
             <button
               key={id}
               type="button"
-              onClick={() => onSelect(id)}
+              onClick={() => {
+                if (enabled) {
+                  onSelect(id)
+                }
+              }}
+              disabled={!enabled}
               className={`group relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm transition ${
                 selected
                   ? 'bg-[#11253a] text-sky-100 shadow-[inset_0_0_0_1px_rgba(36,150,237,0.2)]'
-                  : 'text-slate-400 hover:bg-[#141b22] hover:text-slate-100'
+                  : enabled
+                    ? 'text-slate-400 hover:bg-[#141b22] hover:text-slate-100'
+                    : 'cursor-not-allowed text-slate-500 opacity-70'
               }`}
             >
               <span
@@ -60,7 +67,9 @@ export function Sidebar({ activeItem, onSelect }: SidebarProps) {
                 className={`h-4 w-4 shrink-0 ${
                   selected
                     ? 'text-[#7CC6FF]'
-                    : 'text-slate-500 transition group-hover:text-slate-300'
+                    : enabled
+                      ? 'text-slate-500 transition group-hover:text-slate-300'
+                      : 'text-slate-600'
                 }`}
               />
               <div className="min-w-0">
@@ -70,6 +79,10 @@ export function Sidebar({ activeItem, onSelect }: SidebarProps) {
               {selected ? (
                 <span className="ml-auto rounded-md bg-[#22C55E]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#86EFAC]">
                   Active
+                </span>
+              ) : !enabled ? (
+                <span className="ml-auto rounded-md border border-[#31404e] bg-[#161d24] px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+                  暂未开放
                 </span>
               ) : null}
             </button>
