@@ -170,6 +170,22 @@ npm run desktop:preview
 - Windows 免安装：`PortMaster-0.0.0-windows-x64-portable.exe`
 - Windows 32 位免安装：`PortMaster-0.0.0-windows-ia32-portable.exe`
 
+### 推荐下载
+
+- 大多数 Windows 电脑：优先下载 `PortMaster-0.0.0-windows-x64-setup.exe`
+- 不想安装、只想解压即用的 Windows 64 位：下载 `PortMaster-0.0.0-windows-x64.zip` 或 `PortMaster-0.0.0-windows-x64-portable.exe`
+- 老旧 32 位 Windows：下载 `PortMaster-0.0.0-windows-ia32-setup.exe`
+- Mac Apple Silicon（M1 / M2 / M3 / M4）：下载 `PortMaster-0.0.0-macos-arm64.dmg`
+- Mac Intel：下载 `PortMaster-0.0.0-macos-x64.dmg`
+
+### 平台说明
+
+- Windows x64：已经修复 `spawn lsof ENOENT`，现在使用 Windows 原生命令扫描本地监听端口
+- Windows ia32：已经成功打包，可下载使用
+- macOS Intel x64：已经成功打包，可下载使用
+- macOS Apple Silicon：已经成功打包，可下载使用
+- `latest.yml` 和 `latest-mac.yml` 是自动更新元数据，不是重复安装包
+
 ## 开发与构建
 
 安装依赖：
