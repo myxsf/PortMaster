@@ -32,6 +32,23 @@ function normalizeProjectPath(value?: string) {
   return value?.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
+function isAbsoluteProjectPath(value?: string) {
+  if (!value) return false
+  return value.startsWith('/') || /^[A-Za-z]:\//.test(value)
+}
+
+function buildProjectPathFromSegments(segments: string[], endIndex: number) {
+  const selected = segments.slice(0, endIndex + 1)
+  if (selected.length === 0) return undefined
+
+  const first = selected[0]
+  if (/^[A-Za-z]:$/.test(first)) {
+    return `${first}/${selected.slice(1).join('/')}`.replace(/\/+$/, '')
+  }
+
+  return `/${selected.join('/')}`.replace(/\/+$/, '')
+}
+
 export function getProjectMeta(service: ServiceItem): ProjectMeta | null {
   if (service.projectId && service.projectLabel && service.projectPath) {
     return {
@@ -46,10 +63,9 @@ export function getProjectMeta(service: ServiceItem): ProjectMeta | null {
   }
 
   const normalized = normalizeProjectPath(service.cwd ?? service.path)
-  if (!normalized?.startsWith('/')) {
+  if (!normalized || !isAbsoluteProjectPath(normalized)) {
     return null
   }
-
   if (
     normalized.includes('/var/db/redis') ||
     normalized.includes('/var/lib/mysql') ||
@@ -69,8 +85,12 @@ export function getProjectMeta(service: ServiceItem): ProjectMeta | null {
       ? segments.length - 2
       : segments.length - 1
 
-  const projectPath = `/${segments.slice(0, labelIndex + 1).join('/')}`
+  const projectPath = buildProjectPathFromSegments(segments, labelIndex)
   const projectLabel = segments[labelIndex]
+
+  if (!projectPath) {
+    return null
+  }
 
   return {
     id: `project:${projectPath}`,

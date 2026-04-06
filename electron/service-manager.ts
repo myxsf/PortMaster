@@ -153,10 +153,12 @@ async function resolveDockerBinary() {
 
   const candidates = [
     process.env.DOCKER_BIN,
+    'docker.exe',
+    'docker',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe',
     '/Applications/Docker.app/Contents/Resources/bin/docker',
     '/usr/local/bin/docker',
     '/opt/homebrew/bin/docker',
-    'docker',
   ].filter(Boolean) as string[]
 
   for (const candidate of candidates) {
@@ -252,9 +254,26 @@ function normalizeFilePath(value?: string) {
   return value?.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
+function isAbsoluteProjectPath(value?: string) {
+  if (!value) return false
+  return value.startsWith('/') || /^[A-Za-z]:\//.test(value)
+}
+
+function buildProjectPathFromSegments(segments: string[], endIndex: number) {
+  const selected = segments.slice(0, endIndex + 1)
+  if (selected.length === 0) return undefined
+
+  const first = selected[0]
+  if (/^[A-Za-z]:$/.test(first)) {
+    return `${first}/${selected.slice(1).join('/')}`.replace(/\/+$/, '')
+  }
+
+  return `/${selected.join('/')}`.replace(/\/+$/, '')
+}
+
 function inferProjectMetaFromPath(value?: string) {
   const normalized = normalizeFilePath(value)
-  if (!normalized?.startsWith('/')) {
+  if (!normalized || !isAbsoluteProjectPath(normalized)) {
     return {}
   }
 
@@ -280,7 +299,11 @@ function inferProjectMetaFromPath(value?: string) {
       : segments.length - 1
 
   const projectLabel = segments[labelIndex]
-  const projectPath = `/${segments.slice(0, labelIndex + 1).join('/')}`
+  const projectPath = buildProjectPathFromSegments(segments, labelIndex)
+
+  if (!projectPath) {
+    return {}
+  }
 
   return {
     projectId: `project:${projectPath}`,
@@ -425,6 +448,30 @@ function formatElapsed(raw: string) {
   return value
 }
 
+function formatElapsedFromSeconds(totalSeconds: number) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
+    return 'unknown'
+  }
+
+  const days = Math.floor(totalSeconds / 86_400)
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600)
+  const minutes = Math.floor((totalSeconds % 3_600) / 60)
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`
+  }
+
+  return 'less than a min'
+}
+
 function nowLogStamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false })
 }
@@ -497,6 +544,10 @@ async function getProcessInfo(pid: number) {
 }
 
 async function getProcessCwd(pid: number) {
+  if (process.platform === 'win32') {
+    return undefined
+  }
+
   try {
     const { stdout } = await execFileAsync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])
     const cwdLine = stdout
@@ -614,7 +665,111 @@ async function waitForLocalPortState(port: number, expectedRunning: boolean, tim
   }
 }
 
+interface WindowsProcessInfo {
+  ProcessId?: number
+  Name?: string
+  CommandLine?: string
+  ExecutablePath?: string
+  CreationDate?: string
+}
+
+function formatWindowsElapsed(creationDate?: string) {
+  if (!creationDate) return 'unknown'
+
+  const startedAt = new Date(creationDate)
+  if (Number.isNaN(startedAt.getTime())) {
+    return 'unknown'
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000))
+  return formatElapsedFromSeconds(elapsedSeconds)
+}
+
+async function listLocalServicesWindows() {
+  const { stdout: netstatOutput } = await execFileAsync('netstat', ['-ano', '-p', 'tcp'])
+  const { stdout: processOutput } = await execFileAsync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    'Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine,ExecutablePath,CreationDate | ConvertTo-Json -Compress',
+  ])
+
+  const processItems = JSON.parse(processOutput || '[]') as WindowsProcessInfo[] | WindowsProcessInfo
+  const processList = Array.isArray(processItems) ? processItems : [processItems]
+  const processMap = new Map<number, WindowsProcessInfo>()
+  for (const item of processList) {
+    const pid = Number(item.ProcessId)
+    if (Number.isFinite(pid) && pid > 0) {
+      processMap.set(pid, item)
+    }
+  }
+
+  const runtimes: LocalRuntime[] = []
+  const lines = netstatOutput.split(/\r?\n/)
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line.startsWith('TCP')) continue
+
+    const parts = line.split(/\s+/)
+    if (parts.length < 5) continue
+    if (parts[3].toUpperCase() !== 'LISTENING') continue
+
+    const localAddress = parts[1]
+    const pid = Number(parts[4])
+    if (!Number.isFinite(pid) || pid <= 0) continue
+
+    const portMatch = localAddress.match(/:(\d+)$/)
+    if (!portMatch) continue
+
+    const port = Number(portMatch[1])
+    const rawHost = localAddress.slice(0, localAddress.lastIndexOf(':')).replace(/^\[|\]$/g, '')
+    const host =
+      rawHost === '0.0.0.0' || rawHost === '::' || rawHost === '::1' || rawHost === '127.0.0.1'
+        ? 'localhost'
+        : rawHost || 'localhost'
+
+    const processInfo = processMap.get(pid)
+    const command = processInfo?.CommandLine?.trim() || processInfo?.ExecutablePath?.trim() || ''
+    const commandName =
+      processInfo?.Name?.trim() ||
+      (command ? path.basename(command.split(/\s+/)[0].replace(/^"+|"+$/g, '')) : 'unknown')
+    const executablePath = processInfo?.ExecutablePath?.trim()
+
+    runtimes.push({
+      port,
+      pid,
+      host,
+      protocol: 'tcp',
+      commandName,
+      command,
+      cwd: undefined,
+      uptime: formatWindowsElapsed(processInfo?.CreationDate),
+      path: executablePath || command || commandName,
+      stackLabel: detectStackLabel({
+        commandName,
+        command,
+        path: executablePath || command || commandName,
+        detectedName: detectName(commandName),
+      }),
+    })
+  }
+
+  const deduped = new Map<number, LocalRuntime>()
+  for (const runtime of runtimes) {
+    deduped.set(runtime.port, runtime)
+  }
+
+  return [...deduped.values()].sort((a, b) => a.port - b.port)
+}
+
 async function listLocalServices() {
+  if (process.platform === 'win32') {
+    return listLocalServicesWindows()
+  }
+
   const { stdout } = await execFileAsync('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpcn'])
   const lines = stdout.split('\n').filter(Boolean)
   const runtimes: LocalRuntime[] = []
@@ -938,6 +1093,7 @@ async function inferLaunchCommand(cwd?: string, detectedName?: string) {
 
 async function stopRedisViaBrewIfNeeded(runtime?: LocalRuntime) {
   if (!runtime) return false
+  if (process.platform !== 'darwin') return false
 
   const corpus = `${runtime.commandName} ${runtime.command} ${runtime.path}`.toLowerCase()
   if (!corpus.includes('redis')) {

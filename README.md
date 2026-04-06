@@ -155,16 +155,20 @@ npm run desktop:preview
 如果你不想本地装依赖，直接去 GitHub Release 下载对应系统的压缩包即可：
 
 - macOS Apple Silicon：`PortMaster-0.0.0-macos-arm64.zip`
+- macOS Intel：`PortMaster-0.0.0-macos-x64.zip`
 - Windows x64：`PortMaster-0.0.0-windows-x64.zip`
-- Windows ARM64：`PortMaster-0.0.0-windows-arm64.zip`
+- Windows 32 位：`PortMaster-0.0.0-windows-ia32.zip`
 
 解压后直接运行应用即可。
 
 如果你更喜欢安装版，也可以选择：
 
 - macOS：`PortMaster-0.0.0-macos-arm64.dmg`
+- macOS Intel：`PortMaster-0.0.0-macos-x64.dmg`
 - Windows：`PortMaster-0.0.0-windows-x64-setup.exe`
+- Windows 32 位：`PortMaster-0.0.0-windows-ia32-setup.exe`
 - Windows 免安装：`PortMaster-0.0.0-windows-x64-portable.exe`
+- Windows 32 位免安装：`PortMaster-0.0.0-windows-ia32-portable.exe`
 
 ## 开发与构建
 
@@ -228,6 +232,12 @@ X64 版本：
 npm run dist:win:x64
 ```
 
+32 位版本：
+
+```bash
+npm run dist:win:ia32
+```
+
 ## 当前常见产物
 
 打包后的文件默认在 `release/` 目录。
@@ -235,12 +245,14 @@ npm run dist:win:x64
 ```text
 release/PortMaster-0.0.0-macos-arm64.dmg
 release/PortMaster-0.0.0-macos-arm64.zip
+release/PortMaster-0.0.0-macos-x64.dmg
+release/PortMaster-0.0.0-macos-x64.zip
 release/PortMaster-0.0.0-windows-x64-setup.exe
 release/PortMaster-0.0.0-windows-x64-portable.exe
 release/PortMaster-0.0.0-windows-x64.zip
-release/PortMaster-0.0.0-windows-arm64-setup.exe
-release/PortMaster-0.0.0-windows-arm64-portable.exe
-release/PortMaster-0.0.0-windows-arm64.zip
+release/PortMaster-0.0.0-windows-ia32-setup.exe
+release/PortMaster-0.0.0-windows-ia32-portable.exe
+release/PortMaster-0.0.0-windows-ia32.zip
 ```
 
 ## 常见启动命令示例
