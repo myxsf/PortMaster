@@ -93,7 +93,10 @@ export function SettingsPage({ services, onSaved }: SettingsPageProps) {
 
   const normalizedHost = draft.host.trim() || 'localhost'
   const testMatched = services.find(
-    (service) => service.port === draft.port && service.host === normalizedHost,
+    (service) =>
+      service.status === 'active' &&
+      service.port === draft.port &&
+      service.host === normalizedHost,
   )
 
   const applyPreset = (label: string) => {

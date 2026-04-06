@@ -1393,6 +1393,13 @@ export async function launchLocalService(input: LocalLaunchInput) {
   child.stderr?.on('data', (chunk) => {
     void stream.appendFile(chunk)
   })
+  const closeStream = () => {
+    void stream.close().catch(() => {
+      // ignore close races for short-lived launchers
+    })
+  }
+  child.once('exit', closeStream)
+  child.once('error', closeStream)
   child.unref()
 
   registry.localLaunches[recordId] = {

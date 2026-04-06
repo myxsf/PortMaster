@@ -2,22 +2,45 @@
 
 PortMaster 是一个面向开发环境的桌面控制台，用来统一管理 `localhost` 端口、本地项目、Docker 容器和常用启动命令。
 
-这一版的重点不只是“看见端口”，而是把下面这条链路做完整：
+仓库地址：`https://github.com/myxsf/PortMaster`
+
+## 它解决什么问题
+
+很多本地开发工具只能“看到端口”，但真正日常会遇到的问题通常是这些：
+
+- 端口关了没有
+- 项目怎么再次启动
+- Docker 服务到底算哪个项目
+- 关闭后记录为什么不见了
+- 日志要去哪里找
+
+PortMaster 这版重点补的是“可启动、可记录、可复用”，把下面这条链路做完整：
 
 - 发现本地服务和 Docker 容器
-- 记录项目与服务
+- 记录项目和端口
 - 保存或推断启动命令
 - 后续直接在面板里启动、关闭、查看日志
 
-仓库地址：`https://github.com/myxsf/PortMaster`
+## 界面预览
 
-## 软件截图
+### 仪表盘
 
-![PortMaster 首页](./src/assets/hero.png)
+![PortMaster 仪表盘预览](./src/assets/hero.png)
+
+仪表盘主要看本地服务，适合做这些事：
+
+- 搜索端口、别名、服务名、路径
+- 按项目折叠多个端口
+- 对记录过的项目直接执行 `Start`、`Close`、`View Logs`
+- 快速判断哪些服务正在运行，哪些只是“已记录但当前未启动”
+
+### 品牌图标
 
 ![PortMaster 图标](./assets/portmaster-icon.svg)
 
-## 现在能做什么
+这个图标会用于桌面应用图标、README 展示和打包产物识别。
+
+## 主要功能
 
 - 扫描本机监听端口，识别常见开发服务
 - 读取 Docker 容器端口，并在 Docker 页统一管理
@@ -27,9 +50,9 @@ PortMaster 是一个面向开发环境的桌面控制台，用来统一管理 `l
 - 常见 Java、Spring Boot、Node、Vue、Python、Go、Open WebUI、Ollama 提供命令示例
 - 对已经记录过的服务，关闭后仍保留记录，后续可以直接再次 `Start`
 - 项目组支持“记录项目”“全部启动”“全部关闭”
-- 日志中心支持在“开发日志 / 全部日志”之间切换，并按范围清理日志
+- 日志中心支持在“开发日志 / 全部日志”之间切换，并按项目或端口筛选
 
-## 适合怎么用
+## 使用方式
 
 ### 方式一：先手动启动，再记录
 
@@ -51,48 +74,24 @@ PortMaster 是一个面向开发环境的桌面控制台，用来统一管理 `l
 4. 点击 `按配置启动`
 5. 配置会同步出现在主列表里，后续可以直接复用
 
-## 页面说明
+### 方式三：直接用“启动服务”弹窗
 
-### 首页
+适合临时命令、一次性调试，或想先试跑再决定是否记录。
 
-- 展示项目简介
-- 提供 GitHub 仓库按钮
-- 预留讨论 Q 群按钮
+- 表单模式：适合你已经知道命令、工作目录和预期端口
+- 命令行模式：适合你只想像终端一样输一条命令，让 PortMaster 接管启动和日志
 
-### 仪表盘
+## 下载与安装
 
-- 只看本地服务
-- 支持搜索端口、别名、进程名、路径
-- 对本地项目提供“打开”“查看日志”“记录”“启动 / 关闭”
-
-### Docker 容器
-
-- 只看 Docker 容器
-- 支持“启动 / 停止”
-- 启动后会校验容器是否真的进入运行状态
-
-### 日志中心
-
-- 统一查看最近日志
-- 支持按项目或端口筛选
-- 支持清理当前筛选范围的日志
-
-### 自定义
-
-- 保存项目级配置
-- 给每个输入项提供示例
-- 必填项明确标记
-- 可直接按配置启动
-
-## 安装依赖
+### 方式一：从 GitHub 克隆仓库后本地安装
 
 ```bash
+git clone https://github.com/myxsf/PortMaster.git
+cd PortMaster
 npm install
 ```
 
-## 开发启动
-
-启动桌面应用：
+开发模式启动：
 
 ```bash
 npm run dev
@@ -110,7 +109,29 @@ npm run dev:renderer
 npm run desktop:preview
 ```
 
-## 构建
+### 方式二：直接下载对应系统压缩包，解压即可
+
+如果你不想本地装依赖，直接去 GitHub Release 下载对应系统的压缩包即可：
+
+- macOS Apple Silicon：`PortMaster-0.0.0-macos-arm64.zip`
+- Windows x64：`PortMaster-0.0.0-windows-x64.zip`
+- Windows ARM64：`PortMaster-0.0.0-windows-arm64.zip`
+
+解压后直接运行应用即可。
+
+如果你更喜欢安装版，也可以选择：
+
+- macOS：`PortMaster-0.0.0-macos-arm64.dmg`
+- Windows：`PortMaster-0.0.0-windows-x64-setup.exe`
+- Windows 免安装：`PortMaster-0.0.0-windows-x64-portable.exe`
+
+## 开发与构建
+
+安装依赖：
+
+```bash
+npm install
+```
 
 构建前端和 Electron 主进程：
 
@@ -123,6 +144,18 @@ npm run build
 ```bash
 npm run generate:icons
 ```
+
+启动链路冒烟测试：
+
+```bash
+npm run test:launch-smoke
+```
+
+这个测试会真实验证两条链路：
+
+- 表单模式启动本地服务并识别端口
+- 命令行模式启动本地服务并识别端口
+- 两种模式都能成功关闭服务
 
 ## 打包命令
 
@@ -140,12 +173,6 @@ Intel 版本：
 npm run dist:mac:x64
 ```
 
-也可以直接使用：
-
-```bash
-npm run dist:mac
-```
-
 ### Windows
 
 ARM 版本：
@@ -160,17 +187,9 @@ X64 版本：
 npm run dist:win:x64
 ```
 
-也可以直接使用：
-
-```bash
-npm run dist:win
-```
-
-## 直接下载 Release / 本地产物
+## 当前常见产物
 
 打包后的文件默认在 `release/` 目录。
-
-当前项目里常见的文件名包括：
 
 ```text
 release/PortMaster-0.0.0-macos-arm64.dmg
@@ -182,12 +201,6 @@ release/PortMaster-0.0.0-windows-arm64-setup.exe
 release/PortMaster-0.0.0-windows-arm64-portable.exe
 release/PortMaster-0.0.0-windows-arm64.zip
 ```
-
-如果你是从 GitHub Release 下载，优先选择：
-
-- macOS Apple Silicon：`PortMaster-0.0.0-macos-arm64.dmg`
-- Windows x64：`PortMaster-0.0.0-windows-x64-setup.exe`
-- 不想安装可用：`portable.exe`
 
 ## 常见启动命令示例
 
@@ -226,6 +239,18 @@ ollama serve
 - 项目有多个端口时，建议都放到同一个项目名下，方便“全部启动 / 全部关闭”
 - 如果点击“启动”后没起来，先看“查看日志”
 - Docker 服务没起来时，先确认 Docker Desktop 已启动，再检查 compose 文件和镜像状态
+
+## 本次更新重点
+
+详见 [CHANGELOG.md](./CHANGELOG.md)。
+
+这次主要补了这些：
+
+- 修复“已停止服务被误判为端口占用”的问题
+- 实装并验证“表单模式 / 命令行模式”两种启动方式
+- 优化本地项目与 Docker 服务的项目分组逻辑
+- 补回日志中心的“开发日志 / 全部日志”切换
+- 调整大量用户文案，让提示更面向普通使用者
 
 ## 技术栈
 
