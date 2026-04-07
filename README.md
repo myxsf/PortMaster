@@ -3,7 +3,8 @@
 PortMaster 是一个面向开发环境的桌面控制台，用来统一管理 `localhost` 端口、本地项目、Docker 容器和常用启动命令。
 
 仓库地址：`https://github.com/myxsf/PortMaster`
-项目开源支持:·https://linux.do/latest。linux do
+
+项目开源支持:·https://linux.do/latest  linux do
 
 ## 它解决什么问题
 
